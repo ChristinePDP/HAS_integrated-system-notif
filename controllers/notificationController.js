@@ -3,32 +3,42 @@ import { sendEmail } from '../config/mailer.js';
 
 /**
  * Process Notification Controller
- * 
- * Handles incoming notification requests from other microservices.
+ * * Handles incoming notification requests from other microservices.
  * Implements duplicate detection, email sending, and database logging.
  * 
- * Request body format:
+ *  * Request body format:
  * {
  *   "senderSystem": "string",
  *   "recipientEmail": "string",
  *   "subject": "string",
  *   "message": "string"
  * }
+ * 
  */
 export const processNotification = async (req, res) => {
   try {
     // Step 1: Extract and validate request body
-    const { senderSystem, recipientEmail, subject, message } = req.body;
+    const { recipientEmail, subject, message } = req.body;
 
-    // Validate all required fields exist
-    if (!senderSystem || !recipientEmail || !subject || !message) {
+    // Validate required fields (senderSystem is no longer required from the client)
+    if (!recipientEmail || !subject || !message) {
       return res.status(400).json({
         success: false,
         message: 'Missing required fields',
         code: 'MISSING_FIELDS',
-        required: ['senderSystem', 'recipientEmail', 'subject', 'message'],
-        received: { senderSystem, recipientEmail, subject, message },
+        required: ['recipientEmail', 'subject', 'message'],
+        received: { recipientEmail, subject, message },
       });
+    }
+
+    // AUTO-DETECT SENDER SYSTEM FROM TOKEN
+    let senderSystem = 'Unknown System';
+    if (req.user && req.user.role) {
+        const role = req.user.role;
+        if (role === 'Doctor') senderSystem = 'Doctor Portal';
+        else if (role === 'Patient') senderSystem = 'Patient Portal';
+        else if (role === 'Admin') senderSystem = 'Admin System';
+        else senderSystem = `${role} System`;
     }
 
     // Additional validation: check if email is valid format
@@ -91,6 +101,7 @@ export const processNotification = async (req, res) => {
     // Step 4: Save notification log to MongoDB
     const notificationLog = await NotificationLog.create({
       senderSystem,
+      senderEmail: req.user && req.user.email ? req.user.email.toLowerCase() : null,
       recipientEmail: recipientEmail.toLowerCase(),
       subject,
       message,
@@ -110,19 +121,7 @@ export const processNotification = async (req, res) => {
     }
 
     // Step 5: Mock Legacy System Update
-    // TODO: Trigger Legacy System Adapter
-    // This represents an asynchronous call to update legacy hospital systems
-    // Example implementation:
-    // try {
-    //   await updateLegacySystem({
-    //     notificationId: notificationLog._id,
-    //     recipientEmail,
-    //     timestamp: new Date(),
-    //   });
-    // } catch (legacyError) {
-    //   console.error('Legacy system update failed:', legacyError);
-    //   // Log but don't fail the request - notification was already sent
-    // }
+    // (Adapter Layer integration logic will go here if needed)
 
     // Step 6: Return success response
     return res.status(200).json({
@@ -156,7 +155,6 @@ export const processNotification = async (req, res) => {
       console.error('Failed to log error to database:', dbError.message);
     }
 
-    // Return standardized error response for integrating teams
     return res.status(500).json({
       success: false,
       message: 'Internal server error while processing notification',
@@ -167,17 +165,52 @@ export const processNotification = async (req, res) => {
 };
 
 /**
- * Get Notification Logs (Optional endpoint for debugging)
- * Retrieves notification logs from the database with pagination
+ * Get Notification Logs
+ * Retrieves notification logs with Role-Based Access Control (RBAC) and pagination.
  */
 export const getNotificationLogs = async (req, res) => {
   try {
-    const { page = 1, limit = 20, status, recipientEmail } = req.query;
+    const { page = 1, limit = 20, status } = req.query;
 
     const query = {};
+    
+    // Status filter (allows fetching only "Failed" or "Sent" logs if requested)
     if (status) query.status = status;
-    if (recipientEmail) query.recipientEmail = recipientEmail.toLowerCase();
 
+    // ====================================================================
+    // INTEGRATION FIX: ROLE-BASED ACCESS CONTROL (RBAC)
+    // Identify the user requesting the data based on their verified token
+    // ====================================================================
+    const user = req.user; // Extracted from authMiddleware
+
+    // Fallback security: Block access if the token lacks a proper role payload
+    if (!user || !user.role) {
+      query.recipientEmail = 'unauthorized_access'; 
+    } 
+    // GROUP 5 (Patient Portal): Patients can only view their own emails
+    else if (user.role === 'Patient') {
+      if (!user.email) {
+        return res.status(400).json({ success: false, message: "Token payload missing 'email' for patient validation." });
+      }
+      query.recipientEmail = user.email.toLowerCase();
+    } 
+    // GROUP 6 (Doctor Portal): Doctors can ONLY view logs they personally sent
+    else if (user.role === 'Doctor') {
+      if (!user.email) {
+        return res.status(400).json({ success: false, message: "Token payload missing 'email' for doctor validation." });
+      }
+      query.senderEmail = user.email.toLowerCase();
+    } 
+    // ADMIN ROLE: Unrestricted access. Allowed to fetch all logs or search by specific recipient
+    else if (user.role === 'Admin') {
+      if (req.query.recipientEmail) {
+        query.recipientEmail = req.query.recipientEmail.toLowerCase();
+      }
+    }
+
+    // ====================================================================
+    
+    // Fetch from database with the constructed query
     const logs = await NotificationLog.find(query)
       .sort({ createdAt: -1 })
       .limit(limit * 1)
@@ -190,7 +223,7 @@ export const getNotificationLogs = async (req, res) => {
       success: true,
       data: logs,
       pagination: {
-        currentPage: page,
+        currentPage: Number(page),
         totalPages: Math.ceil(totalCount / limit),
         totalCount,
       },

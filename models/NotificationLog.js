@@ -8,8 +8,13 @@ import mongoose from 'mongoose';
 const notificationLogSchema = new mongoose.Schema({
   senderSystem: {
     type: String,
-    required: true,
+    default: 'Unknown System',
     description: 'The microservice or system that initiated the notification (e.g., "Queue", "Appointment", "Payment")',
+  },
+  senderEmail: {
+    type: String,
+    default: null,
+    description: 'Email address of the person/system that sent the notification (extracted from JWT token)',
   },
   recipientEmail: {
     type: String,
