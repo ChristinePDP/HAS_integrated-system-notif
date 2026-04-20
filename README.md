@@ -101,6 +101,8 @@ Systems that fetch notification logs to display in their user interfaces with au
 
 ## 📡 API Documentation
 
+**Para makuha yung ilalagay sa bearer token sa thunder clinet/Postman, itype niyo sa  hiwalay na terminal "node generate-tokens.js"**
+
 ### **Endpoint 1: POST /api/notify** (For Triggerers)
 
 **Purpose:** Accept notification requests from other microservices and send emails.

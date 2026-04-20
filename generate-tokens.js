@@ -5,7 +5,7 @@ const JWT_SECRET = 'project_namin_ito_123';
 
 // Generate tokens for different roles
 const patientToken = jwt.sign(
-  { role: 'Patient', email: 'john@hospital.com', userId: 'P-12345' },
+  { role: 'Patient', email: '23-14074@g.batstate-u.edu.ph', userId: 'P-12345' },
   JWT_SECRET,
   { expiresIn: '1h' }
 );
@@ -23,7 +23,7 @@ const adminToken = jwt.sign(
 );
 
 console.log('============= MGA TOKENS PARA SA THUNDER CLIENT =============\n');
-console.log('🧑‍⚕️ PATIENT TOKEN (john@hospital.com):');
+console.log('🧑‍⚕️ PATIENT TOKEN (23-14074@g.batstate-u.edu.ph):');
 console.log(patientToken + '\n');
 
 console.log('🩺 DOCTOR TOKEN (drsmith@hospital.com):');
